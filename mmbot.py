@@ -177,24 +177,17 @@ def cancel_all_orders():
         logging.error(f"Error canceling orders: {e}")
 
 def market_maker_loop():
-    current_price = get_price()
-    if current_price is None:
-        return
-
-    logging.info(f"🎯 Start Market Maker | Target: {TARGET_PRICE} | Market: {current_price}")
-    send_telegram_alert(f"🚀 Market Maker started for *{SYMBOL}*\nTarget: `{TARGET_PRICE}`\nStart Price: `{current_price}`")
-
-    order_price = current_price
-    order_size = ORDER_SIZE
-
-    base_asset = SYMBOL[:-4]
-    quote_asset = SYMBOL[-4:]
-
-    target_reached = False
-
     while True:
         try:
             current_price = get_price()
+
+            if current_price is None:
+                logging.warning("Market price is None. Retrying...")
+                time.sleep(10)
+                continue
+            
+            logging.info(f"🎯 Target: {TARGET_PRICE:.6f} | 💹 Market: {current_price:.6f}")
+            
             if current_price >= TARGET_PRICE:
                 if not target_reached:
                     cancel_all_orders()
@@ -205,41 +198,43 @@ def market_maker_loop():
                     logging.info("Target price reached. Still monitoring.")
                 time.sleep(10)
                 continue
-
+            
+            # Only execute this block if market price < TARGET
             bid_price = round(order_price * (1 - SPREAD_PERCENT), 6)
             ask_price = round(order_price * (1 + SPREAD_PERCENT), 6)
-
+            
             cancel_all_orders()
             time.sleep(2)
-
+            
             base_balance = get_balance(base_asset)
             quote_balance = get_balance(quote_asset)
-
+            
             required_quote = bid_price * order_size
             required_base = order_size
-
+            
             if quote_balance >= required_quote:
                 place_order("BUY", bid_price)
             else:
                 msg = f"❗ Not enough {quote_asset} to BUY: Have {quote_balance:.2f}, need {required_quote:.2f}"
                 logging.warning(msg)
                 send_telegram_alert(msg)
-
+            
             time.sleep(2)
-
+            
             if base_balance >= required_base:
                 place_order("SELL", ask_price)
             else:
                 msg = f"❗ Not enough {base_asset} to SELL: Have {base_balance:.2f}, need {required_base:.2f}"
                 logging.warning(msg)
                 send_telegram_alert(msg)
-
+            
+            # Prepare next ladder step
             order_price = round(order_price + INCREMENT_STEP, 6)
-            order_size = round(order_size * 0.97, 2)
-
+            order_size = round(order_size * 0.97, 2)  # Shrinking size per step to conserve balance
+            
             time.sleep(3)
-
-        except Exception as e:
+            
+            except Exception as e:
             logging.error(f"Loop error: {e}")
             send_telegram_alert(f"❌ Bot Error: {e}")
             time.sleep(5)

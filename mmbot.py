@@ -27,69 +27,56 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s')
 
 def sign(timestamp, method, request_path, body_json=""):
     message = f"{timestamp}{method.upper()}{request_path}{body_json}"
-    signature = hmac.new(API_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
-    return signature
+    return hmac.new(API_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 def send_telegram_alert(message):
     for user_id in TELEGRAM_USER_IDS:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": user_id.strip(),
-            "text": message,
-            "parse_mode": "Markdown"
-        }
         try:
-            requests.post(url, json=payload)
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": user_id.strip(),
+                    "text": message,
+                    "parse_mode": "Markdown"
+                }
+            )
         except Exception as e:
             logging.error(f"Telegram error: {e}")
 
 def get_price():
     url = f"{API_BASE}/sapi/v2/ticker"
-    params = {"symbol": SYMBOL}
     try:
-        resp = requests.get(url, params=params)
+        resp = requests.get(url, params={"symbol": SYMBOL})
         data = resp.json()
         if 'last' in data:
             price = float(data['last'])
-            send_telegram_alert(f"📊 *{SYMBOL} Price Update:* `{price}`")
+            send_telegram_alert(f"📊 *{SYMBOL} Price Update:* {price}")
             return price
-        else:
-            logging.warning(f"Unexpected price response: {data}")
-            return TARGET_PRICE
+        logging.warning(f"Unexpected price response: {data}")
     except Exception as e:
         logging.error(f"Price fetch error: {e}")
-        return TARGET_PRICE
+    return TARGET_PRICE
 
 def get_balance(asset):
     timestamp = str(int(time.time() * 1000))
-    method = "GET"
-    request_path = "/sapi/v1/account"
-    signature = sign(timestamp, method, request_path)
-
+    signature = sign(timestamp, "GET", "/sapi/v1/account")
     headers = {
         "X-CH-APIKEY": API_KEY,
         "X-CH-TS": timestamp,
         "X-CH-SIGN": signature
     }
-
-    url = f"{API_BASE}{request_path}"
     try:
-        resp = requests.get(url, headers=headers)
-        data = resp.json()
-        if "balances" in data:
-            for item in data["balances"]:
-                if item["asset"] == asset:
-                    return float(item["free"])
-        else:
-            logging.warning(f"Balance fetch error: {data}")
+        resp = requests.get(f"{API_BASE}/sapi/v1/account", headers=headers)
+        balances = resp.json().get("balances", [])
+        for item in balances:
+            if item["asset"] == asset:
+                return float(item["free"])
     except Exception as e:
         logging.error(f"Balance fetch failed: {e}")
     return 0.0
 
 def place_order(side, price):
     timestamp = str(int(time.time() * 1000))
-    method = "POST"
-    request_path = "/sapi/v2/order"
     body = {
         "symbol": SYMBOL,
         "side": side,
@@ -99,18 +86,15 @@ def place_order(side, price):
         "price": f"{price:.6f}"
     }
     body_json = json.dumps(body, separators=(',', ':'))
-    signature = sign(timestamp, method, request_path, body_json)
-
+    signature = sign(timestamp, "POST", "/sapi/v2/order", body_json)
     headers = {
         "X-CH-APIKEY": API_KEY,
         "X-CH-TS": timestamp,
         "X-CH-SIGN": signature,
         "Content-Type": "application/json"
     }
-
-    url = f"{API_BASE}{request_path}"
     try:
-        resp = requests.post(url, headers=headers, data=body_json)
+        resp = requests.post(f"{API_BASE}/sapi/v2/order", headers=headers, data=body_json)
         data = resp.json()
         if "orderId" in data:
             logging.info(f"✅ Placed {side} order at {price}")
@@ -122,77 +106,49 @@ def place_order(side, price):
 def cancel_all_orders():
     try:
         timestamp = str(int(time.time() * 1000))
-        method = "GET"
-        request_path = "/sapi/v2/openOrders"
         query = f"symbol={SYMBOL}"
-        full_path_with_query = f"{request_path}?{query}"
-
-        signature = sign(timestamp, method, full_path_with_query)
-
+        path = f"/sapi/v2/openOrders?{query}"
+        signature = sign(timestamp, "GET", path)
         headers = {
             "X-CH-APIKEY": API_KEY,
             "X-CH-TS": timestamp,
             "X-CH-SIGN": signature
         }
+        resp = requests.get(f"{API_BASE}/sapi/v2/openOrders", params={"symbol": SYMBOL}, headers=headers)
+        orders = resp.json().get("list", [])
 
-        url = f"{API_BASE}{request_path}?{query}"
-        resp = requests.get(url, headers=headers)
-        orders = resp.json()
-
-        if isinstance(orders, dict) and "code" in orders:
-            logging.warning(f"Open Orders Error: {orders}")
-            return
-
-        orders_list = orders.get("list", [])
-        if not orders_list:
-            logging.info("No open orders to cancel.")
-            return
-
-        for order in orders_list:
+        for order in orders:
             cancel_timestamp = str(int(time.time() * 1000))
-            cancel_method = "POST"
-            cancel_path = "/sapi/v2/cancel"
             cancel_body = {
                 "symbol": SYMBOL,
                 "orderId": order["orderId"]
             }
-            cancel_body_json = json.dumps(cancel_body, separators=(',', ':'))
-            cancel_signature = sign(cancel_timestamp, cancel_method, cancel_path, cancel_body_json)
-
+            cancel_json = json.dumps(cancel_body, separators=(',', ':'))
+            cancel_signature = sign(cancel_timestamp, "POST", "/sapi/v2/cancel", cancel_json)
             cancel_headers = {
                 "X-CH-APIKEY": API_KEY,
                 "X-CH-TS": cancel_timestamp,
                 "X-CH-SIGN": cancel_signature,
                 "Content-Type": "application/json"
             }
-
-            cancel_url = f"{API_BASE}{cancel_path}"
-            cancel_resp = requests.post(cancel_url, headers=cancel_headers, data=cancel_body_json)
-            cancel_result = cancel_resp.json()
-
-            if "status" in cancel_result and cancel_result["status"] == "CANCELED":
+            resp = requests.post(f"{API_BASE}/sapi/v2/cancel", headers=cancel_headers, data=cancel_json)
+            result = resp.json()
+            if result.get("status") == "CANCELED":
                 logging.info(f"✅ Cancelled Order {order['orderId']}")
             else:
-                logging.warning(f"⚠️ Failed to cancel {order['orderId']}: {cancel_result}")
-
+                logging.warning(f"⚠️ Failed to cancel {order['orderId']}: {result}")
     except Exception as e:
         logging.error(f"Error canceling orders: {e}")
 
 def market_maker_loop():
-    current_price = get_price()
-    if current_price is None:
-        return
-
-    logging.info(f"🎯 Start Market Maker | Target: {TARGET_PRICE} | Market: {current_price}")
-    send_telegram_alert(f"🚀 Market Maker started for *{SYMBOL}*\nTarget: `{TARGET_PRICE}`\nStart Price: `{current_price}`")
-
-    order_price = current_price
-    order_size = ORDER_SIZE
+    order_price = get_price()
+    send_telegram_alert(f"🚀 Market Maker started for *{SYMBOL}*\nTarget: {TARGET_PRICE}\nStart Price: {order_price}")
+    logging.info(f"🎯 Market Maker Started | Target: {TARGET_PRICE} | Start: {order_price}")
 
     base_asset = SYMBOL[:-4]
     quote_asset = SYMBOL[-4:]
 
-    while order_price < TARGET_PRICE:
+    while True:
         try:
             bid_price = round(order_price * (1 - SPREAD_PERCENT), 6)
             ask_price = round(order_price * (1 + SPREAD_PERCENT), 6)
@@ -203,8 +159,8 @@ def market_maker_loop():
             base_balance = get_balance(base_asset)
             quote_balance = get_balance(quote_asset)
 
-            required_quote = bid_price * order_size
-            required_base = order_size
+            required_quote = bid_price * ORDER_SIZE
+            required_base = ORDER_SIZE
 
             if quote_balance >= required_quote:
                 place_order("BUY", bid_price)
@@ -223,17 +179,12 @@ def market_maker_loop():
                 send_telegram_alert(msg)
 
             order_price = round(order_price + INCREMENT_STEP, 6)
-            order_size = round(order_size * 0.97, 2)
-
             time.sleep(3)
 
         except Exception as e:
             logging.error(f"Loop error: {e}")
             send_telegram_alert(f"❌ Bot Error: {e}")
             time.sleep(5)
-
-    send_telegram_alert(f"✅ *Target price `{TARGET_PRICE}` reached!* Bot stopped.")
-    logging.info("🎉 Target price reached. Exiting.")
 
 if __name__ == "__main__":
     market_maker_loop()

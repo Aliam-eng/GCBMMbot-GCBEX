@@ -233,11 +233,6 @@ def market_maker_loop():
             order_size = round(order_size * 0.97, 2)  # Shrinking size per step to conserve balance
             
             time.sleep(3)
-            
-        except Exception as e:
-        logging.error(f"Loop error: {e}")
-        send_telegram_alert(f"❌ Bot Error: {e}")
-        time.sleep(5)
 
 if __name__ == "__main__":
     try:

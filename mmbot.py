@@ -242,15 +242,3 @@ def market_maker_loop():
 if __name__ == "__main__":
     try:
         market_maker_loop()
-        except KeyboardInterrupt:
-            logging.info("🛑 Bot manually stopped. Canceling all open orders...")
-            send_telegram_alert("🛑 *Bot stopped manually.* Canceling all open orders...")
-            cancel_all_orders()
-            logging.info("✅ All orders cancelled. Exiting.")
-            exit(0)
-        except Exception as e:
-            logging.error(f"❌ Unexpected error: {e}")
-            send_telegram_alert(f"❌ *Bot crashed unexpectedly!*\nError: `{str(e)}`")
-            cancel_all_orders()
-            logging.info("✅ All orders cancelled on crash. Exiting.")
-            exit(1)

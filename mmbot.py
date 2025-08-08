@@ -113,7 +113,7 @@ def place_order(side, price):
         if "orderId" in data:
             logging.info(f"✅ Placed {side} order at {price}")
         else:
-            logging.warning(f"⚠️ Order error: {data}")
+            logging.warning(f"⚠ Order error: {data}")
     except Exception as e:
         logging.error(f"Error placing {side} order: {e}")
 
@@ -171,12 +171,21 @@ def cancel_all_orders():
             if "status" in cancel_result and cancel_result["status"] == "CANCELED":
                 logging.info(f"✅ Cancelled Order {order['orderId']}")
             else:
-                logging.warning(f"⚠️ Failed to cancel {order['orderId']}: {cancel_result}")
+                logging.warning(f"⚠ Failed to cancel {order['orderId']}: {cancel_result}")
 
     except Exception as e:
         logging.error(f"Error canceling orders: {e}")
 
 def market_maker_loop():
+    # ✅ Initialize missing variables
+    target_reached = False
+    order_price = TARGET_PRICE
+    order_size = ORDER_SIZE
+    
+    # ✅ Extract base and quote assets from SYMBOL
+    base_asset = SYMBOL[:-4]  # "GCBUSDT" -> "GCB"
+    quote_asset = SYMBOL[-4:]  # "GCBUSDT" -> "USDT"
+    
     while True:
         try:
             current_price = get_price()
@@ -191,7 +200,7 @@ def market_maker_loop():
             if current_price >= TARGET_PRICE:
                 if not target_reached:
                     cancel_all_orders()
-                    send_telegram_alert(f"✅ *Target price `{TARGET_PRICE}` reached!* Bot now in monitor-only mode.")
+                    send_telegram_alert(f"✅ *Target price {TARGET_PRICE} reached!* Bot now in monitor-only mode.")
                     logging.info("🎯 Target price reached. Monitoring only.")
                     target_reached = True
                 else:
@@ -233,7 +242,24 @@ def market_maker_loop():
             order_size = round(order_size * 0.97, 2)  # Shrinking size per step to conserve balance
             
             time.sleep(3)
+            
+        except Exception as e:  # ✅ Fixed indentation - aligned with try
+            logging.error(f"Loop error: {e}")
+            send_telegram_alert(f"❌ Bot Error: {e}")
+            time.sleep(5)
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     try:
         market_maker_loop()
+    except KeyboardInterrupt:
+        logging.info("🛑 Bot manually stopped. Canceling all open orders...")
+        send_telegram_alert("🛑 Bot stopped manually. Canceling all open orders...")
+        cancel_all_orders()
+        logging.info("✅ All orders cancelled. Exiting.")
+        exit(0)
+    except Exception as e:
+        logging.error(f"❌ Unexpected error: {e}")
+        send_telegram_alert(f"❌ Bot crashed unexpectedly!\nError: {str(e)}")
+        cancel_all_orders()
+        logging.info("✅ All orders cancelled on crash. Exiting.")
+        exit(1)

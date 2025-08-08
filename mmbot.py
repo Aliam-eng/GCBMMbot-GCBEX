@@ -93,7 +93,7 @@ def place_order(side, price):
         "side": side,
         "type": "LIMIT",
         "timeInForce": "GTC",
-        "quantity": ORDER_SIZE,
+        "volume": ORDER_SIZE,
         "price": f"{price:.6f}"
     }
     body_json = json.dumps(body, separators=(',', ':'))
@@ -112,10 +112,13 @@ def place_order(side, price):
         data = resp.json()
         if "orderId" in data:
             logging.info(f"✅ Placed {side} order at {price}")
+            send_telegram_alert(f"✅ Placed {side} order at {price}")
         else:
             logging.warning(f"⚠ Order error: {data}")
+            send_telegram_alert(f"⚠ Order error: {data}")
     except Exception as e:
         logging.error(f"Error placing {side} order: {e}")
+        send_telegram_alert(f"Error placing {side} order: {e}")
 
 def cancel_all_orders():
     try:
@@ -170,8 +173,10 @@ def cancel_all_orders():
 
             if "status" in cancel_result and cancel_result["status"] == "CANCELED":
                 logging.info(f"✅ Cancelled Order {order['orderId']}")
+                send_telegram_alert(f"✅ Cancelled Order {order['orderId']}")
             else:
                 logging.warning(f"⚠ Failed to cancel {order['orderId']}: {cancel_result}")
+                send_telegram_alert(f"⚠ Failed to cancel {order['orderId']}: {cancel_result}")
 
     except Exception as e:
         logging.error(f"Error canceling orders: {e}")
@@ -196,6 +201,7 @@ def market_maker_loop():
                 continue
             
             logging.info(f"🎯 Target: {TARGET_PRICE:.6f} | 💹 Market: {current_price:.6f}")
+            send_telegram_alert(f"🎯 Target: {TARGET_PRICE:.6f} | 💹 Market: {current_price:.6f}")
             
             if current_price >= TARGET_PRICE:
                 if not target_reached:
@@ -248,7 +254,7 @@ def market_maker_loop():
             send_telegram_alert(f"❌ Bot Error: {e}")
             time.sleep(5)
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     try:
         market_maker_loop()
     except KeyboardInterrupt:
@@ -259,7 +265,7 @@ if _name_ == "_main_":
         exit(0)
     except Exception as e:
         logging.error(f"❌ Unexpected error: {e}")
-        send_telegram_alert(f"❌ Bot crashed unexpectedly!\nError: {str(e)}")
+        send_telegram_alert(f"❌ *Bot crashed unexpectedly!*\nError: `{str(e)}`")
         cancel_all_orders()
         logging.info("✅ All orders cancelled on crash. Exiting.")
-        exit(1)
+        exit(1)

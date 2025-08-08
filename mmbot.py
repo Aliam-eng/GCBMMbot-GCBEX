@@ -234,10 +234,10 @@ def market_maker_loop():
             
             time.sleep(3)
             
-            except Exception as e:
-            logging.error(f"Loop error: {e}")
-            send_telegram_alert(f"❌ Bot Error: {e}")
-            time.sleep(5)
+        except Exception as e:
+        logging.error(f"Loop error: {e}")
+        send_telegram_alert(f"❌ Bot Error: {e}")
+        time.sleep(5)
 
 if __name__ == "__main__":
     try:

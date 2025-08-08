@@ -211,7 +211,7 @@ def market_maker_loop():
                     target_reached = True
                 else:
                     logging.info("Target price reached. Still monitoring.")
-                time.sleep(10)
+                time.sleep(60)
                 continue
             
             # Only execute this block if market price < TARGET

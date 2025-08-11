@@ -218,7 +218,7 @@ def market_maker_loop():
             if target_reached:
                 logging.info("📉 Price fell below target — resetting ladder orders.")
                 target_reached = False
-                order_price = current_price      # reset starting price
+                order_price = TARGET_PRICE      # reset starting price
                 order_size = ORDER_SIZE          # reset size
 
             # Only execute this block if market price < TARGET
